@@ -6,7 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:firebase_database/ui/firebase_animated_list.dart';
+import 'package:connectivity/connectivity.dart';
+import 'package:flutter_sms/flutter_sms.dart';
+import 'package:intl/intl.dart';
 
 //void main() => runApp(MyApp());
 
@@ -27,15 +29,15 @@ Future<void> main() async {
     name: 'riot',
     options: Platform.isIOS
         ? const FirebaseOptions(
-            googleAppID: '1:25558707067:web:b3d65c743d247620bb6bde',
-            gcmSenderID: '25558707067',
-            databaseURL: "https://riot-270417.firebaseio.com",
-          )
+      googleAppID: '1:25558707067:web:b3d65c743d247620bb6bde',
+      gcmSenderID: '25558707067',
+      databaseURL: "https://riot-270417.firebaseio.com",
+    )
         : const FirebaseOptions(
-            googleAppID: '1:25558707067:web:b3d65c743d247620bb6bde',
-            apiKey: "AIzaSyC9VNVUGEp8JBegcys44Zp5bNZsjxGEuUk",
-            databaseURL: "https://riot-270417.firebaseio.com",
-          ),
+      googleAppID: '1:25558707067:web:b3d65c743d247620bb6bde',
+      apiKey: "AIzaSyC9VNVUGEp8JBegcys44Zp5bNZsjxGEuUk",
+      databaseURL: "https://riot-270417.firebaseio.com",
+    ),
   );
   runApp(MaterialApp(
       debugShowCheckedModeBanner: false,
@@ -57,16 +59,18 @@ class MapSample extends StatefulWidget {
 }
 
 class MapSampleState extends State<MapSample> {
-  Completer<GoogleMapController> _controller = Completer();
-  List<Marker> allMarkers = [];
+  static Completer<GoogleMapController> _controller = Completer();
+  static List<Marker> allMarkers = [];
+  List<String> usernames = [];
   final _sosMessageController = TextEditingController();
   var isSOSvisible = true;
   Position position = Position();
+  Timer _timer;
+  var uploadSuccess = false;
 
-  DatabaseReference _messagesRef;
-  var _netDistressReference;
-  StreamSubscription<Event> _messagesSubscription;
-  DatabaseError _error;
+  DatabaseReference _netDistressReference;
+
+  final snackBar = SnackBar(content: Text('Yay! A SnackBar!'));
 
   @override
   void initState() {
@@ -76,13 +80,70 @@ class MapSampleState extends State<MapSample> {
     _netDistressReference = FirebaseDatabase.instance.reference();
     // Demonstrates configuring the database directly
     final FirebaseDatabase database = FirebaseDatabase(app: widget.app);
-    _messagesRef = database.reference().child('net_distress');
-    database.reference().child('counter').once().then((DataSnapshot snapshot) {
-      print('Connected to second database and read ${snapshot.value}');
-    });
+    //_messagesRef = database.reference().child('net_distress');
+
     database.setPersistenceEnabled(true);
-    database.setPersistenceCacheSizeBytes(10000000);
+    //database.setPersistenceCacheSizeBytes(10000000);
     _netDistressReference.keepSynced(true);
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+    _timer.cancel();
+  }
+
+  void _sendSMS(String message, List<String> recipents) async {
+    try {
+      String _result = await sendSMS(message: message, recipients: recipents);
+      print(_result);
+    } catch (error) {
+      print(error.toString());
+    }
+  }
+
+  void updateMarkers() {
+    _netDistressReference
+        .child('net_distress')
+        .once()
+        .then((DataSnapshot snapshot) {
+//      snapshot.value.forEach((i, j) {
+//        print("${i} has has ${i.runtimeType}");
+//      });
+      for (MapEntry entry in snapshot.value.entries) {
+        var latitude;
+        var longitude;
+        var message;
+        var username;
+//        print("valueeees ${entry.key} says  ${entry.value}");
+        username = entry.key;
+        entry.value.forEach((i, j) {
+          //print("${i}                       ${j}");
+          if (i.toString() == 'latitude') {
+            latitude = double.parse(j.toString());
+          }
+          if (i.toString() == 'longitude') {
+            longitude = double.parse(j.toString());
+          }
+          if (i.toString() == 'message') {
+            message = j.toString();
+          }
+        });
+
+        if (!usernames.contains(username)) {
+          allMarkers.add(Marker(
+              markerId: MarkerId(username),
+              position: LatLng(latitude, longitude),
+              onTap: () {
+                print(message);
+              }));
+          usernames.add(username);
+        }
+
+        //allMarkers.add(Marker(markerId: MarkerId(widget.username),position: LatLng(entry['latitude'],entry['longitude'])));
+      }
+      print("No. of points: ${allMarkers.length}");
+    });
   }
 
   static final CameraPosition _kGooglePlex = CameraPosition(
@@ -90,26 +151,85 @@ class MapSampleState extends State<MapSample> {
     zoom: 5,
   );
 
+  Widget Mapper() {
+    return SafeArea(
+      child: Container(
+          height: MediaQuery.of(context).size.height,
+          width: MediaQuery.of(context).size.width,
+          child: GoogleMap(
+            markers: Set.from(allMarkers),
+            mapType: MapType.normal,
+            initialCameraPosition: _kGooglePlex,
+            onMapCreated: (GoogleMapController controller) {
+              _controller.complete(controller);
+            },
+          )),
+    );
+  }
+
+  void sendWithAndWithoutNet(
+      double latitude, double longitude, String message) async {
+    var connectivityResult = await (Connectivity().checkConnectivity());
+
+    print(connectivityResult);
+    if (connectivityResult == ConnectivityResult.mobile ||
+        connectivityResult == ConnectivityResult.mobile) {
+      //print("sending ${_sosMessageController.text}");
+      print("${latitude} ${longitude} ${message}");
+      //TODO: Send lat, long, msg to firebase
+      var now = new DateTime.now();
+      String formattedDate = DateFormat('yyyy-MM-dd – kk:mm').format(now);
+      _netDistressReference.child("net_distress").child(widget.username).set({
+        'latitude': latitude,
+        'longitude': longitude,
+        'message': message,
+        'timestamp': formattedDate
+      });
+    } else {
+      print("No net");
+      _sendSMS(
+          "Sending SMS to UpRoar...\n\nDON'T CHANGE THE MESSAGE BELOW!\n\nUsername: ___${widget.username}___\nLatitude: ___${latitude}___\nLongitude: ___${longitude}___\nMessage: ___${message}___\n\nDon't worry! We will reach out to you shortly!",
+          ["+919004128000"]);  //+917014152658 anshu
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    Widget SOSbuttun = isSOSvisible
+    Widget customNotif() {
+      return uploadSuccess
+          ? Container(
+          width: MediaQuery.of(context).size.width,
+          color: Colors.red,
+          height: 70,
+          alignment: Alignment.bottomCenter,
+          child: Container(
+              padding: EdgeInsets.only(bottom: 3),
+              child: Text(
+                "Sent to UpRoar",
+                style: TextStyle(fontSize: 20),
+              )))
+          : SizedBox.shrink();
+    }
+
+    Widget SOSbutton = isSOSvisible
         ? Container(
-            margin: EdgeInsets.only(
-                top: MediaQuery.of(context).size.height - 80,
-                left: MediaQuery.of(context).size.width - 350),
-            width: MediaQuery.of(context).size.width * .70,
-            height: 65,
-            child: FloatingActionButton.extended(
-              backgroundColor: Colors.red,
-              heroTag: "SOS",
-              elevation: 10,
-              onPressed: () {
-                _goToTheLake();
-                Future.delayed(const Duration(milliseconds: 500), () {
-                  setState(() {
-                    isSOSvisible = false;
-                  });
-                });
+        padding: EdgeInsets.all(10),
+        width: 250,
+        height: 80,
+        margin: EdgeInsets.only(
+            top: MediaQuery.of(context).size.height - 90,
+            left: MediaQuery.of(context).size.width / 2 - 125),
+//            width: MediaQuery.of(context).size.width * .70,
+//            height: 65,
+        child: FloatingActionButton.extended(
+          backgroundColor: Colors.red,
+          heroTag: "SOS",
+          elevation: 5,
+          onPressed: () {
+            _goToCurrentLocation();
+            setState(() {
+              isSOSvisible = false;
+            });
 //            Navigator.push(context,
 //                PageRouteBuilder(
 //                    settings: RouteSettings(isInitialRoute: true),
@@ -117,89 +237,91 @@ class MapSampleState extends State<MapSample> {
 //                        Animation<double> animation,
 //                        Animation<double> secondaryAnimation) =>
 //                        CreatePlaylistPage()));
-              },
-              icon: Icon(Icons.add),
-              label: Text(
-                "SOS",
-                style: TextStyle(fontSize: 20),
-              ),
-            ))
+          },
+          icon: Icon(Icons.add),
+          label: Text(
+            "SOS",
+            style: TextStyle(fontSize: 20),
+          ),
+        ))
         : Hero(
-            tag: "SOS",
-            child: Container(
-              margin: EdgeInsets.only(
-                top: MediaQuery.of(context).size.height - 80,
-              ),
-              width: MediaQuery.of(context).size.width,
-              height: 65,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: <Widget>[
-                  Container(
-                    width: MediaQuery.of(context).size.width - 100,
-                    decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(30),
-                        color: Color(0xffe1e3e6)),
-                    child: TextField(
-                      style: TextStyle(color: Colors.blue, fontSize: 24),
-                      controller: _sosMessageController,
-                      textAlign: TextAlign.center,
-                      decoration: InputDecoration(
-                        hintText: "SOS Message:",
-                        border: InputBorder.none,
-                      ),
-                    ),
+        tag: "SOS",
+        child: Container(
+          margin: EdgeInsets.only(
+            top: MediaQuery.of(context).size.height - 80,
+          ),
+          width: MediaQuery.of(context).size.width,
+          height: 65,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              Container(
+                width: MediaQuery.of(context).size.width - 100,
+                decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(30),
+                    color: Color(0xffe1e3e6)),
+                child: TextField(
+                  style: TextStyle(color: Colors.blue, fontSize: 24),
+                  controller: _sosMessageController,
+                  textAlign: TextAlign.center,
+                  decoration: InputDecoration(
+                    hintText: "SOS Message:",
+                    border: InputBorder.none,
                   ),
-                  Container(
-                    decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(30),
-                        color: Colors.blue),
-                    child: IconButton(
-                      icon: Icon(Icons.send),
-                      color: Colors.black,
-                      onPressed: () {
-                        print("sending ${_sosMessageController.text}");
-                        //TODO: Send lat, long, msg to firebase
-                        _netDistressReference
-                            .child("net_distress")
-                            .child(widget.username)
-                            .set({
-                          'latitude': position.latitude,
-                          'longitude': position.longitude,
-                          'message': _sosMessageController.text
-                        });
-                      },
-                    ),
-                  )
-                ],
+                ),
               ),
-            ));
+              Container(
+                decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(30),
+                    color: Colors.blue),
+                child: IconButton(
+                  icon: Icon(Icons.send),
+                  color: Colors.black,
+                  onPressed: () {
+                    sendWithAndWithoutNet(position.latitude,
+                        position.longitude, _sosMessageController.text);
+                    uploadSuccess = true;
+                    _timer =
+                    new Timer(const Duration(milliseconds: 1000), () {
+                      setState(() {
+                        uploadSuccess = false;
+                      });
+                    });
+                  },
+                ),
+              )
+            ],
+          ),
+        ));
 
     return Scaffold(
       body: Center(
         child: Stack(
           children: <Widget>[
-            Container(
-              height: MediaQuery.of(context).size.height,
-              width: MediaQuery.of(context).size.width,
-              child: GoogleMap(
-                markers: Set.from(allMarkers),
-                mapType: MapType.normal,
-                initialCameraPosition: _kGooglePlex,
-                onMapCreated: (GoogleMapController controller) {
-                  _controller.complete(controller);
-                },
-              ),
-            ),
-            //SOSbuttun               /////////////////////////
+            Mapper(),
+            customNotif(),
             SingleChildScrollView(
               child: Container(
                 child: Stack(
                   children: <Widget>[
-                    SOSbuttun
+                    SOSbutton
                     // your body code
                   ],
                 ),
+              ),
+            ),
+            Container(
+              decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(30), color: Colors.blue),
+              margin: EdgeInsets.only(
+                  top: 50, left: MediaQuery.of(context).size.width - 70),
+              child: IconButton(
+                icon: Icon(Icons.refresh),
+                onPressed: () {
+                  setState(() {
+                    updateMarkers();
+                  });
+                },
               ),
             ),
           ],
@@ -214,10 +336,10 @@ class MapSampleState extends State<MapSample> {
     );
   }
 
-  Future<void> _goToTheLake() async {
+  Future<void> _goToCurrentLocation() async {
     final GoogleMapController controller = await _controller.future;
     position = await Geolocator()
-        .getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+        .getCurrentPosition(desiredAccuracy: LocationAccuracy.best);
 
     print(position.latitude);
     print(position.longitude);
@@ -231,9 +353,11 @@ class MapSampleState extends State<MapSample> {
           position: LatLng(position.latitude, position.longitude),
           markerId: MarkerId(widget.username),
           onTap: () {
-            Scaffold.of(context).showSnackBar(SnackBar(
-              content: Text(widget.username),
-            ));
+//            Scaffold.of(context).showSnackBar(SnackBar(
+//              content: Text(widget.username),
+//            ));
+            print(widget.username);
+            print(widget.username);
           }));
     });
 
