@@ -43,7 +43,7 @@ Future<void> main() async {
       debugShowCheckedModeBanner: false,
       title: 'Flutter Google Maps Demo',
       home: MapSample(
-        username: "pranjalsrv",
+        username: "anshu",
         app: app,
       )));
 }
@@ -89,8 +89,9 @@ class MapSampleState extends State<MapSample> {
 
   @override
   void dispose() {
+    _timer?.cancel();
     super.dispose();
-    _timer.cancel();
+
   }
 
   void _sendSMS(String message, List<String> recipents) async {
@@ -173,7 +174,7 @@ class MapSampleState extends State<MapSample> {
 
     print(connectivityResult);
     if (connectivityResult == ConnectivityResult.mobile ||
-        connectivityResult == ConnectivityResult.mobile) {
+        connectivityResult == ConnectivityResult.wifi) {
       //print("sending ${_sosMessageController.text}");
       print("${latitude} ${longitude} ${message}");
       //TODO: Send lat, long, msg to firebase
@@ -192,33 +193,30 @@ class MapSampleState extends State<MapSample> {
           ["+919004128000"]);  //+917014152658 anshu
     }
   }
+  Widget customNotif() {
+    return uploadSuccess
+        ? Container(
+        width: MediaQuery.of(context).size.width,
+        color: Colors.red,
+        height: 70,
+        alignment: Alignment.bottomCenter,
+        child: Container(
+            padding: EdgeInsets.only(bottom: 3),
+            child: Text(
+              "Sent to UpRoar",
+              style: TextStyle(fontSize: 20),
+            )))
+        : SizedBox.shrink();
+  }
+
 
   @override
   Widget build(BuildContext context) {
-    Widget customNotif() {
-      return uploadSuccess
-          ? Container(
-          width: MediaQuery.of(context).size.width,
-          color: Colors.red,
-          height: 70,
-          alignment: Alignment.bottomCenter,
-          child: Container(
-              padding: EdgeInsets.only(bottom: 3),
-              child: Text(
-                "Sent to UpRoar",
-                style: TextStyle(fontSize: 20),
-              )))
-          : SizedBox.shrink();
-    }
-
     Widget SOSbutton = isSOSvisible
         ? Container(
         padding: EdgeInsets.all(10),
-        width: 250,
+        width: MediaQuery.of(context).size.width*0.7,
         height: 80,
-        margin: EdgeInsets.only(
-            top: MediaQuery.of(context).size.height - 90,
-            left: MediaQuery.of(context).size.width / 2 - 125),
 //            width: MediaQuery.of(context).size.width * .70,
 //            height: 65,
         child: FloatingActionButton.extended(
@@ -247,28 +245,30 @@ class MapSampleState extends State<MapSample> {
         : Hero(
         tag: "SOS",
         child: Container(
-          margin: EdgeInsets.only(
-            top: MediaQuery.of(context).size.height - 80,
-          ),
           width: MediaQuery.of(context).size.width,
           height: 65,
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: <Widget>[
-              Container(
-                width: MediaQuery.of(context).size.width - 100,
-                decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(30),
-                    color: Color(0xffe1e3e6)),
-                child: TextField(
-                  style: TextStyle(color: Colors.blue, fontSize: 24),
-                  controller: _sosMessageController,
-                  textAlign: TextAlign.center,
-                  decoration: InputDecoration(
-                    hintText: "SOS Message:",
-                    border: InputBorder.none,
+              Row(
+                children: <Widget>[
+                  Padding(padding: EdgeInsets.only(left: 30),),
+                  Container(
+                    width: MediaQuery.of(context).size.width - 100,
+                    decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(30),
+                        color: Color(0xffe1e3e6)),
+                    child: TextField(
+                      style: TextStyle(color: Colors.blue, fontSize: 24),
+                      controller: _sosMessageController,
+                      textAlign: TextAlign.center,
+                      decoration: InputDecoration(
+                        hintText: "SOS Message:",
+                        border: InputBorder.none,
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
               Container(
                 decoration: BoxDecoration(
@@ -295,21 +295,13 @@ class MapSampleState extends State<MapSample> {
         ));
 
     return Scaffold(
+      floatingActionButton: SOSbutton,
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       body: Center(
         child: Stack(
           children: <Widget>[
             Mapper(),
             customNotif(),
-            SingleChildScrollView(
-              child: Container(
-                child: Stack(
-                  children: <Widget>[
-                    SOSbutton
-                    // your body code
-                  ],
-                ),
-              ),
-            ),
             Container(
               decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(30), color: Colors.blue),
